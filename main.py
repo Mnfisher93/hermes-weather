@@ -384,8 +384,15 @@ def main():
                     scan_cycle(client, config, risk, sim_mode, scan_only, dashboard)
 
                     if args.once:
-                        dashboard.log("--once flag: exiting after single scan", style="ok")
-                        time.sleep(2)
+                        dashboard.log("✓ Scan complete — press Ctrl+C or wait 5min to exit",
+                                      style="ok")
+                        # Keep the dashboard up so you can actually read it.
+                        # Ctrl+C exits; otherwise auto-exit after 5 minutes
+                        # so this doesn't linger forever in CI.
+                        try:
+                            time.sleep(300)
+                        except KeyboardInterrupt:
+                            pass
                         break
 
                     interval = int(config.get("scan_interval_seconds", 3000))
