@@ -44,13 +44,21 @@ WEATHER_KEYWORDS = (
 def get_weather_markets(
     min_volume: int = MIN_VOLUME,
     max_markets: int = 500,
+    max_pages: int = 10,
+    progress_cb=None,
 ) -> list[dict]:
     """
-    Scan Gamma for active, non-closed markets whose question mentions a
-    configured city AND a weather keyword. Returns a list sorted by volume
-    descending.
+    Scan Gamma's events endpoint for weather-tagged events, then flatten out
+    the per-bucket markets inside each event.
 
-    Each market dict contains:
+    Uses /events?tag_slug=weather which is ~100x faster than paging through
+    all active markets: weather events total ~200, each containing 5–15
+    bucketed markets. One call typically returns everything we need.
+
+    progress_cb(pages_done, max_pages, found_so_far) fires after each page
+    so dashboards can stream a live indicator.
+
+    Each returned market dict contains:
         condition_id, question, city, icao,
         yes_token_id, no_token_id, yes_price, no_price,
         volume, end_date, accepting_orders
@@ -59,13 +67,14 @@ def get_weather_markets(
     seen_ids: set[str] = set()
     offset = 0
     limit = 100
+    pages_done = 0
 
-    while len(results) < max_markets:
+    while len(results) < max_markets and pages_done < max_pages:
         try:
             resp = requests.get(
-                f"{GAMMA_URL}/markets",
+                f"{GAMMA_URL}/events",
                 params={
-                    "active": "true",
+                    "tag_slug": "weather",
                     "closed": "false",
                     "limit": limit,
                     "offset": offset,
@@ -76,72 +85,100 @@ def get_weather_markets(
         except requests.RequestException:
             break
 
-        batch = resp.json()
-        if not batch:
+        events = resp.json()
+        if not events:
             break
 
-        for m in batch:
-            cid = m.get("conditionId")
-            if not cid or cid in seen_ids:
+        for event in events:
+            # Event-level filter: skip non-temperature events (rainfall,
+            # annual-ranking markets, etc.). The temperature question parser
+            # will reject anything else downstream anyway.
+            title = (event.get("title") or "").lower()
+            if not any(kw in title for kw in TEMP_EVENT_KEYWORDS):
                 continue
 
-            question = (m.get("question") or "").lower()
-            if not any(kw in question for kw in WEATHER_KEYWORDS):
-                continue
-
-            city = _extract_city(m.get("question") or "")
-            if not city:
-                continue
-
-            vol = float(m.get("volume") or 0)
-            if vol < min_volume:
-                continue
-
-            prices_raw = m.get("outcomePrices", "[]")
-            token_ids_raw = m.get("clobTokenIds", "[]")
-            if isinstance(prices_raw, str):
-                try:
-                    prices_raw = json.loads(prices_raw)
-                except Exception:
+            for m in event.get("markets", []) or []:
+                cid = m.get("conditionId")
+                if not cid or cid in seen_ids:
                     continue
-            if isinstance(token_ids_raw, str):
-                try:
-                    token_ids_raw = json.loads(token_ids_raw)
-                except Exception:
+
+                question = (m.get("question") or "").lower()
+                city = _extract_city(m.get("question") or "") or _extract_city(title)
+                if not city:
                     continue
-            if len(prices_raw) < 2 or len(token_ids_raw) < 2:
-                continue
 
-            try:
-                yes_price = float(prices_raw[0])
-                no_price = float(prices_raw[1])
-            except (TypeError, ValueError):
-                continue
+                vol = float(m.get("volume") or 0)
+                if vol < min_volume:
+                    continue
 
-            # Skip fully resolved / untradeable markets
-            if yes_price <= 0.01 or yes_price >= 0.99:
-                continue
+                prices_raw = m.get("outcomePrices", "[]")
+                if isinstance(prices_raw, str):
+                    try:
+                        prices_raw = json.loads(prices_raw)
+                    except Exception:
+                        continue
+                if len(prices_raw) < 2:
+                    continue
 
-            seen_ids.add(cid)
-            results.append({
-                "condition_id": cid,
-                "question": m.get("question"),
-                "city": city,
-                "icao": CITY_ICAO.get(city),
-                "yes_token_id": token_ids_raw[0],
-                "no_token_id": token_ids_raw[1],
-                "yes_price": yes_price,
-                "no_price": no_price,
-                "volume": vol,
-                "end_date": (m.get("endDate") or "")[:10],
-                "accepting_orders": bool(m.get("acceptingOrders", True)),
-            })
+                # Event markets don't always ship clobTokenIds — refetch if missing
+                token_ids_raw = m.get("clobTokenIds", "[]")
+                if isinstance(token_ids_raw, str):
+                    try:
+                        token_ids_raw = json.loads(token_ids_raw)
+                    except Exception:
+                        token_ids_raw = []
+                if len(token_ids_raw) < 2:
+                    # Skip silently — we can't place orders without token IDs
+                    continue
+
+                try:
+                    yes_price = float(prices_raw[0])
+                    no_price = float(prices_raw[1])
+                except (TypeError, ValueError):
+                    continue
+
+                # Resolved-market sanity filter
+                if yes_price <= 0.005 and no_price <= 0.005:
+                    continue
+                if yes_price >= 0.995 or no_price >= 0.995:
+                    continue
+
+                results.append({
+                    "condition_id": cid,
+                    "question": m.get("question"),
+                    "city": city,
+                    "icao": CITY_ICAO.get(city),
+                    "yes_token_id": token_ids_raw[0],
+                    "no_token_id": token_ids_raw[1],
+                    "yes_price": yes_price,
+                    "no_price": no_price,
+                    "volume": vol,
+                    "end_date": (m.get("endDate") or event.get("endDate") or "")[:10],
+                    "accepting_orders": bool(m.get("acceptingOrders", True)),
+                })
+                seen_ids.add(cid)
 
         offset += limit
-        if len(batch) < limit:
+        pages_done += 1
+        if progress_cb:
+            try:
+                progress_cb(pages_done, max_pages, len(results))
+            except Exception:
+                pass
+        if len(events) < limit:
             break
 
     return sorted(results, key=lambda x: x["volume"], reverse=True)
+
+
+# Event-title keywords that indicate a temperature bucket event (not rainfall,
+# annual rankings, or other weather-tagged curiosities).
+TEMP_EVENT_KEYWORDS = (
+    "highest temperature",
+    "temperature in",
+    "high temp",
+    "warmest day",
+)
 
 
 # ──────────────────────────────────────────────────────────────────

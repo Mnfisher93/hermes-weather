@@ -81,25 +81,36 @@ def scan_cycle(
     log("Starting market scan…", style="accent")
 
     # Close the calibration loop — cheap, one HTTP call per pending cid.
+    log("Resolving pending predictions…", style="muted")
     try:
         res = resolve_pending(max_markets=100)
-        if res["resolved_yes"] or res["resolved_no"]:
-            log(
-                f"Calibration: {res['resolved_yes']} YES / {res['resolved_no']} NO "
-                f"resolved ({res['still_open']} still open)",
-                style="muted",
-            )
+        log(
+            f"Calibration: {res['resolved_yes']} YES / {res['resolved_no']} NO "
+            f"resolved, {res['still_open']} still open, {res['errors']} errors",
+            style="muted",
+        )
     except Exception as e:
         log(f"Calibration poll error: {e}", style="warn")
 
     min_vol = int(config.get("min_market_volume", 5000))
+    log(f"Fetching weather markets from Gamma (min_volume=${min_vol})…", style="muted")
+
+    def _scan_progress(pages_done, max_pages, found):
+        log(f"  Gamma page {pages_done}/{max_pages} — {found} weather markets so far",
+            style="muted")
+        if dashboard:
+            dashboard.tick_progress(pages_done, max_pages, f"fetching ({found} found)")
+
+    if dashboard:
+        dashboard.start_progress(25, label="Gamma paging")
+
     try:
-        markets = get_weather_markets(min_volume=min_vol)
+        markets = get_weather_markets(min_volume=min_vol, progress_cb=_scan_progress)
     except Exception as e:
         log(f"Scanner error: {e}", style="error")
         return []
 
-    log(f"Found {len(markets)} liquid weather markets")
+    log(f"Found {len(markets)} liquid weather markets", style="ok")
 
     # Adaptive parameter tuning — adjusts kelly_fraction and min_ev based
     # on recent (30d) resolved trades in the calibration DB. Falls back to
