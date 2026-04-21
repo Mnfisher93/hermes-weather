@@ -119,10 +119,20 @@ def scan_cycle(
             style="accent",
         )
 
+    if dashboard:
+        dashboard.update_tuner(tuned)
+
     signals: list[dict] = []
     blocked = 0
+    cycle_start = time.time()
 
-    for m in markets:
+    if dashboard:
+        dashboard.start_progress(len(markets), label="queued")
+
+    for i, m in enumerate(markets, start=1):
+        if dashboard:
+            dashboard.tick_progress(i, len(markets), m.get("city", ""))
+
         sig = calculate_edge(
             m,
             kelly_fraction=kelly_now,
@@ -174,6 +184,10 @@ def scan_cycle(
             except Exception as e:
                 log(f"Calibration log error: {e}", style="warn")
 
+    if dashboard:
+        dashboard.end_progress()
+        dashboard.set_cycle_elapsed(time.time() - cycle_start)
+
     summary = (
         f"Scan complete — {len(signals)} signals, {blocked} blocked | "
         f"Exposure: ${risk.current_exposure:.2f} / ${risk.max_exposure_usd:.2f}"
@@ -195,6 +209,12 @@ def scan_cycle(
             for p in risk.open_positions
         ])
         dashboard.update_risk_status(risk.status())
+
+        # Also surface latest Brier in the stats strip
+        try:
+            dashboard.update_brier(brier_score(days=30))
+        except Exception:
+            pass
 
         for msg in risk.drain_log():
             dashboard.log(msg, style="muted")
@@ -351,33 +371,28 @@ def main():
             while True:
                 try:
                     scan_cycle(client, config, risk, sim_mode, scan_only, dashboard)
-                    dashboard.refresh(live)
 
                     if args.once:
                         dashboard.log("--once flag: exiting after single scan", style="ok")
-                        dashboard.refresh(live)
                         time.sleep(2)
                         break
 
                     interval = int(config.get("scan_interval_seconds", 3000))
+                    dashboard.set_next_scan_eta(time.time() + interval)
                     dashboard.log(
                         f"Sleeping {interval // 60}m until next scan…",
                         style="muted",
                     )
-                    dashboard.refresh(live)
-
-                    for _ in range(interval):
-                        time.sleep(1)
-                        dashboard.refresh(live)
+                    # Auto-refresh at 6Hz handles the live countdown — we
+                    # just need to sit here and not block the event loop.
+                    time.sleep(interval)
 
                 except KeyboardInterrupt:
                     dashboard.log("Stopped by user.", style="warn")
-                    dashboard.refresh(live)
                     time.sleep(1)
                     break
                 except Exception as e:
                     dashboard.log(f"Cycle error: {e}", style="error")
-                    dashboard.refresh(live)
                     time.sleep(10)
     else:
         # Plain mode
