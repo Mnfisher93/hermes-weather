@@ -1,0 +1,7 @@
+py-clob-client>=0.34
+web3>=6.0
+python-dotenv>=1.0
+requests>=2.31
+rich>=13.0
+aiohttp>=3.9
+aiosqlite>=0.19

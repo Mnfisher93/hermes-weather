@@ -1,0 +1,20 @@
+{
+  "min_edge": 0.05,
+  "min_ev": 0.03,
+  "kelly_fraction": 0.25,
+  "max_bet_usd": 50,
+  "max_exposure_usd": 200,
+  "max_drawdown_pct": 0.20,
+  "min_market_volume": 5000,
+  "max_slippage": 0.03,
+  "scan_interval_seconds": 3000,
+  "_comment": "City ICAO map and airport coordinates live in core/scanner.py and core/weather.py respectively. Keep them in sync; both match Polymarket's resolution airports.",
+  "cities": [
+    "Atlanta", "Austin", "Amsterdam", "Ankara", "Busan",
+    "Cape Town", "Chicago", "Chongqing", "Dallas", "Denver",
+    "Houston", "Istanbul", "Jakarta", "Jeddah", "Kuala Lumpur",
+    "London", "Lucknow", "Milan", "Munich", "NYC",
+    "Panama City", "Paris", "Seoul", "Shanghai", "Shenzhen",
+    "Singapore", "Tokyo", "Toronto", "Warsaw", "Wuhan"
+  ]
+}

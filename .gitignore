@@ -1,0 +1,37 @@
+# ── Secrets & local state ─────────────────────────────────────
+.env
+.env.local
+*.pem
+*.key
+
+# ── Python ────────────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ── Runtime data (local only) ─────────────────────────────────
+data/markets/*.json
+data/calibration.db
+data/*.sqlite
+data/*.db
+
+# ── Private documentation (internal knowledge base) ───────────
+Hermes-KB/
+
+# ── OS cruft ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Editor ────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ── Project ignore (explicit carve-outs) ──────────────────────
+# Keep these tracked:
+!data/markets/.gitkeep
