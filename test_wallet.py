@@ -7,7 +7,7 @@ c = ClobClient(
     os.getenv("CLOB_HOST"),
     key=os.getenv("POLYMARKET_PRIVATE_KEY"),
     chain_id=int(os.getenv("CHAIN_ID")),
-    signature_type=1,
+    signature_type=2,
     funder=os.getenv("POLYMARKET_FUNDER"),
 )
 c.set_api_creds(c.create_or_derive_api_creds())

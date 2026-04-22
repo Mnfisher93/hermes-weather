@@ -54,7 +54,7 @@ def build_client() -> "ClobClient":
         key=pk,
         chain_id=chain_id,
         funder=funder,
-        signature_type=0 if not funder else 1,
+        signature_type=0 if not funder else 2,
     )
     creds = client.create_or_derive_api_creds()
     client.set_api_creds(creds)

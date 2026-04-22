@@ -4,6 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## READ FIRST — before any other action
+
+1. `Hermes-KB/STATUS.md` — current state of the bot, what's built, what's not
+2. `AGENTS.md` — authoritative handoff doc (overrides this file on disagreement)
+3. `Hermes-KB/02-operations/live-checklist.md` — pre-flight requirements for `--live`
+4. `Hermes-KB/01-modules/*.md` — per-module deep-dives when editing a specific file
+
+**`python main.py` defaults to SIM mode.** Live mode requires `--live` flag + typed `GO LIVE` confirmation (or `HERMES_SKIP_LIVE_CONFIRM=1`). Never assume `.env` `SIM_MODE` controls it — the CLI flag wins.
+
+**The Polymarket account uses `signature_type=2` (Gnosis Safe via MetaMask sign-in).** The PK in `.env` is the MetaMask-exported EOA; `FUNDER` is the Safe it owns. Do NOT propose migrating to email sign-in or re-funding from scratch before first trying `signature_type=2` — that's almost always the fix when balance queries return $0.
+
+---
+
 ## Project: Hermes Weather Arbitrage Agent
 
 Hermes is an autonomous Polymarket weather-arbitrage bot. It ingests professional meteorological forecast data (Open-Meteo, NOAA/NWS, ECMWF, GFS ensemble), compares model probabilities against Polymarket's implied odds, and places limit orders where edge exceeds a configurable threshold. Position sizing uses fractional Kelly Criterion. The terminal UI mirrors the design in the screenshot: three-panel layout with live agent log, position table, and market scan.

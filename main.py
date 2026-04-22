@@ -135,6 +135,9 @@ def scan_cycle(
 
     signals: list[dict] = []
     blocked = 0
+    placed = 0
+    skipped = 0
+    errored = 0
     cycle_start = time.time()
 
     if dashboard:
@@ -185,22 +188,32 @@ def scan_cycle(
                 max_slippage=config.get("max_slippage", 0.03),
             )
         except Exception as e:
+            errored += 1
             log(f"Executor error for {sig['city']}: {e}", style="error")
             continue
 
-        if result and result.get("status") in ("simulated", "placed"):
+        status = (result or {}).get("status", "error:no-result")
+        if status in ("simulated", "placed"):
+            placed += 1
             risk.record_trade(sig)
             try:
                 log_prediction(sig)
             except Exception as e:
                 log(f"Calibration log error: {e}", style="warn")
+        elif status.startswith("skipped"):
+            skipped += 1
+            log(f"Order skipped — {sig['city']} {sig['side']}: {status[8:]}", style="warn")
+        else:
+            errored += 1
+            log(f"Order failed — {sig['city']} {sig['side']}: {status}", style="error")
 
     if dashboard:
         dashboard.end_progress()
         dashboard.set_cycle_elapsed(time.time() - cycle_start)
 
     summary = (
-        f"Scan complete — {len(signals)} signals, {blocked} blocked | "
+        f"Scan complete — {len(signals)} signals | "
+        f"placed={placed} skipped={skipped} errored={errored} blocked={blocked} | "
         f"Exposure: ${risk.current_exposure:.2f} / ${risk.max_exposure_usd:.2f}"
     )
     log(summary, style="accent")
@@ -350,6 +363,14 @@ def main():
         try:
             client = build_client()
             print(f"[OK] CLOB client connected")
+            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+            bal_raw = client.get_balance_allowance(
+                BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            )
+            wallet_usdc = int(bal_raw["balance"]) / 1e6
+            risk.bankroll = wallet_usdc
+            risk.starting_bankroll = wallet_usdc
+            print(f"[OK] Wallet balance: ${wallet_usdc:.2f}")
         except Exception as e:
             print(f"Failed to connect wallet: {e}")
             print("Falling back to SIM mode.")
@@ -371,6 +392,7 @@ def main():
         if scan_only:
             mode += " (scan-only)"
         dashboard.log(f"Mode: {mode}", style="ok")
+        dashboard.update_risk_status(risk.status())
         dashboard.log(
             f"Config: edge≥{config['min_edge']} ev≥{config['min_ev']} "
             f"kelly={config['kelly_fraction']} max_bet=${config['max_bet_usd']}",

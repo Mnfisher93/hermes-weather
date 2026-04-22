@@ -6,7 +6,7 @@
   "max_exposure_usd": 200,
   "max_drawdown_pct": 0.20,
   "min_market_volume": 5000,
-  "max_slippage": 0.03,
+  "max_slippage": 0.10,
   "scan_interval_seconds": 3000,
   "_comment": "City ICAO map and airport coordinates live in core/scanner.py and core/weather.py respectively. Keep them in sync; both match Polymarket's resolution airports.",
   "cities": [
